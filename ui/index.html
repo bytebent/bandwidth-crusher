@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bandwidth Crusher</title>
+<style>
+:root{
+  --platinum:#dcdce0; --platinum-hi:#ececef; --platinum-lo:#c4c4ca; --etch:#9c9ca4;
+  --ink:#000; --ink-soft:#4a4a52; --inset:#f4f4f6;
+  --green:#61bb46; --yellow:#fdb827; --orange:#f5821f; --red:#e03a3e; --purple:#963d97; --blue:#009ddc;
+  --ui: "Lucida Grande", "Lucida Sans Unicode", Geneva, Verdana, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:#b9b9c0;
+  font:12px/1.3 var(--ui); color:var(--ink);
+  display:flex; align-items:center; justify-content:center;
+  -webkit-user-select:none; user-select:none;
+}
+body.in-plugin{background:var(--platinum)}
+.window{
+  width:780px; max-width:100%;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.55) 0 1px, rgba(255,255,255,0) 1px 2px, rgba(0,0,0,.035) 2px 3px, rgba(0,0,0,0) 3px 4px),
+    var(--platinum);
+  border:1px solid #7d7d86; border-radius:9px;
+  box-shadow:0 1px 0 #fff inset, 0 14px 40px rgba(0,0,0,.28);
+  overflow:hidden;
+}
+body.in-plugin .window{border:0;border-radius:0;box-shadow:none;width:100%;height:100%}
+
+/* title bar */
+.titlebar{
+  display:flex; align-items:center; gap:12px; padding:9px 14px 8px;
+  background:linear-gradient(#f6f6f8,#d6d6db); border-bottom:1px solid #8e8e96;
+}
+.stripes{display:flex;flex-direction:column;width:22px;height:18px;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.stripes i{flex:1}
+.titlebar h1{margin:0;font-size:15px;font-weight:700;letter-spacing:-.2px}
+.titlebar .sub{color:var(--ink-soft);font-size:11px}
+.titlebar .sub .ver{margin-left:6px;color:#7a7a84;font-variant-numeric:tabular-nums}
+.titlebar .spacer{flex:1}
+
+/* loop view */
+.loopview{margin:12px 14px 4px;position:relative}
+.loopview canvas{
+  display:block;width:100%;height:74px;background:#000;border-radius:5px;
+  box-shadow:0 1px 0 #fff, inset 0 1px 3px rgba(0,0,0,.6);
+}
+.legend{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:11px;color:var(--ink-soft)}
+.legend .ramp{width:120px;height:7px;border-radius:4px;
+  background:linear-gradient(90deg,var(--green),var(--yellow),var(--orange),var(--red),var(--purple),var(--blue),#1a1a22);
+  box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.legend .spacer{flex:1}
+.legend b{color:var(--ink);font-weight:700}
+
+/* groups */
+.groups{display:grid;grid-template-columns:1.35fr 1fr 0.75fr 1fr;gap:10px;padding:8px 14px 10px}
+fieldset{
+  margin:0;padding:12px 8px 10px;border:1px solid var(--etch);border-radius:6px;
+  box-shadow:inset 0 1px 0 #fff, 0 1px 0 #fff;
+  background:rgba(255,255,255,.28);
+  min-width:0;
+}
+legend{padding:0 5px;font-weight:700;font-size:11.5px;display:flex;align-items:center;gap:5px}
+legend .dot{width:9px;height:9px;border-radius:50%;box-shadow:inset 0 -1px 1px rgba(0,0,0,.3), 0 0 0 1px rgba(0,0,0,.3)}
+.knobs{display:flex;flex-wrap:wrap;justify-content:space-around;gap:10px 4px}
+
+/* knob */
+.knob{display:flex;flex-direction:column;align-items:center;width:74px;outline:none;cursor:ns-resize;border-radius:6px;padding:2px 0}
+.knob:focus-visible{box-shadow:0 0 0 2px #6aa3e8}
+.knob svg{display:block;overflow:visible}
+.knob .name{margin-top:2px;font-size:11px;text-align:center;line-height:1.15}
+.knob .value{font-size:11px;font-weight:700;margin-top:2px;padding:1px 6px;border-radius:3px;
+  background:var(--inset);box-shadow:inset 0 1px 2px rgba(0,0,0,.25);min-width:58px;text-align:center;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.knob.big .value{min-width:70px}
+.knob.disabled{opacity:.4;pointer-events:none}
+
+/* footer */
+.footer{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:8px 14px 12px;border-top:1px solid var(--etch);box-shadow:inset 0 1px 0 #fff}
+.footer label{display:flex;align-items:center;gap:6px}
+
+/* aqua-ish segmented control + checkbox + buttons */
+.seg{display:inline-flex;border-radius:11px;box-shadow:0 0 0 1px #6f6f78, 0 1px 2px rgba(0,0,0,.25);overflow:hidden}
+.seg button{
+  font:11px var(--ui);color:var(--ink);border:0;padding:3px 11px;cursor:pointer;
+  background:linear-gradient(#fdfdfd 0%,#e4e4e8 50%,#d4d4da 51%,#ececf0 100%);
+}
+.seg button+button{border-left:1px solid #8a8a92}
+.seg button[aria-pressed="true"]{
+  color:#000;font-weight:700;
+  background:linear-gradient(#cfe7fb 0%,#7fbcef 50%,#5aa6e8 51%,#a9d6fb 100%);
+}
+.seg button:focus-visible,.check:focus-visible{outline:2px solid #6aa3e8;outline-offset:2px}
+.check{
+  width:15px;height:15px;border-radius:4px;border:1px solid #6f6f78;cursor:pointer;padding:0;
+  background:linear-gradient(#fff,#dcdce2);box-shadow:0 1px 2px rgba(0,0,0,.2);position:relative;
+}
+.check[aria-checked="true"]{background:linear-gradient(#cfe7fb,#5aa6e8)}
+.check[aria-checked="true"]::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #000;border-width:0 2px 2px 0;transform:rotate(45deg)}
+select{font:11px var(--ui);border-radius:10px;padding:2px 8px;border:1px solid #6f6f78;background:linear-gradient(#fdfdfd,#d9d9df)}
+input[type=number]{font:11px var(--ui);width:58px;padding:2px 5px;border:1px solid #8a8a92;border-radius:3px;box-shadow:inset 0 1px 2px rgba(0,0,0,.2);background:#fff}
+.syncrow{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;font-size:11px}
+.hint{font-size:10.5px;color:var(--ink-soft)}
+@media (max-width:760px){ .groups{grid-template-columns:1fr 1fr} }
+@media (prefers-reduced-motion: reduce){ .loopview canvas{animation:none} }
+</style>
+</head>
+<body>
+<div class="window" role="application" aria-label="Bandwidth Crusher">
+  <div class="titlebar">
+    <div class="stripes" aria-hidden="true">
+      <i style="background:var(--green)"></i><i style="background:var(--yellow)"></i><i style="background:var(--orange)"></i>
+      <i style="background:var(--red)"></i><i style="background:var(--purple)"></i><i style="background:var(--blue)"></i>
+    </div>
+    <h1>Bandwidth Crusher</h1>
+    <span class="sub">Bytebent Audio<span class="ver" id="version"></span></span>
+  </div>
+
+  <div class="loopview">
+    <canvas id="loop" aria-label="Loop buffer view"></canvas>
+    <div class="legend">
+      <span>just written</span><span class="ramp" aria-hidden="true"></span><span>1 s ago or older</span>
+      <span class="spacer"></span>
+      <span>loop <b id="lvLen">&#x2013;</b></span>
+      <span>fresh this pass <b id="lvFresh">&#x2013;</b></span>
+    </div>
+  </div>
+
+  <div class="groups">
+    <fieldset><legend><span class="dot" style="background:var(--green)"></span>Bandwidth</legend><div class="knobs" id="g_bw"></div></fieldset>
+    <fieldset><legend><span class="dot" style="background:var(--yellow)"></span>Loop</legend><div class="knobs" id="g_loop"></div>
+      <div class="syncrow">
+        <button class="check" id="sync" role="checkbox" aria-checked="false" aria-label="Sync loop to tempo"></button>
+        <label for="sync" style="cursor:pointer" onclick="document.getElementById('sync').click()">Sync to tempo</label>
+      </div>
+    </fieldset>
+    <fieldset><legend><span class="dot" style="background:var(--orange)"></span>Chunks</legend><div class="knobs" id="g_chunk"></div></fieldset>
+    <fieldset><legend><span class="dot" style="background:var(--red)"></span>Output</legend><div class="knobs" id="g_out"></div></fieldset>
+  </div>
+
+  <div class="footer">
+    <span>Stereo budget</span>
+    <div class="seg" id="stereo" role="group" aria-label="Stereo budget">
+      <button aria-pressed="true" data-v="0">Shared</button><button aria-pressed="false" data-v="1">Split</button>
+    </div>
+    <label><button class="check" id="resetOnPlay" role="checkbox" aria-checked="true" aria-label="Reset when playback starts"></button>Reset when playback starts</label>
+    <label>Seed <input type="number" id="seed" min="0" max="9999" step="1" value="1"></label>
+    <span class="spacer" style="flex:1"></span>
+    <span class="hint">Drag knobs up/down &#xb7; Shift for fine &#xb7; double-click to reset</span>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Parameter definitions. Ranges must match the C++ plugin.
+   Everything talks to the host in normalised 0..1 values.
+   ============================================================ */
+let displaySR = 48000;   // updated from the plugin
+const DIVISIONS = ["1/64","1/32","1/16","1/8","1/4","1/2","1 bar","2 bars","4 bars"];
+const PARAMS = {
+  budget:    {label:"Budget", group:"g_bw", min:0.5, max:1000, def:40, scale:"log", big:true,
+              fmt:v => (v < 10 ? v.toFixed(1) : Math.round(v)) + " kB/s"},
+  bits:      {label:"Bit depth", group:"g_bw", min:2, max:16, def:12, int:true, fmt:v => v + " bit"},
+  randomness:{label:"Greedy \u2194 Random", group:"g_bw", min:0, max:1, def:0.3, fmt:pct},
+  threshold: {label:"Error threshold", group:"g_bw", min:0, max:0.2, def:0,
+              fmt:v => v <= 0.0001 ? "off" : (20*Math.log10(v)).toFixed(0) + " dB"},
+  loop:      {label:"Loop length", group:"g_loop", min:1, max:4000, def:120, scale:"log", big:true,
+              fmt:v => v < 10 ? v.toFixed(1) + " ms" : v < 1000 ? Math.round(v) + " ms" : (v/1000).toFixed(2) + " s"},
+  division:  {label:"Loop length", group:null, min:0, max:DIVISIONS.length-1, def:2, int:true, fmt:v => DIVISIONS[v]},
+  memory:    {label:"Memory", group:"g_loop", min:0, max:1, def:1, fmt:pct},
+  chunk:     {label:"Chunk size", group:"g_chunk", min:1, max:4096, def:1, scale:"log", int:true,
+              fmt:v => { const ms = v/displaySR*1000; return v + (v === 1 ? " smp" : " \u00b7 " + (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + " ms"); }},
+  smooth:    {label:"Edge smoothing", group:"g_chunk", min:0, max:1, def:0.5, fmt:pct},
+  inGain:    {label:"Input gain", group:"g_out", min:-24, max:24, def:0, fmt:db},
+  outGain:   {label:"Output gain", group:"g_out", min:-24, max:12, def:0, fmt:db},
+  mix:       {label:"Dry / Wet", group:"g_out", min:0, max:1, def:1, fmt:pct},
+};
+const GROUP_COLOR = {g_bw:"--green", g_loop:"--yellow", g_chunk:"--orange", g_out:"--red"};
+function pct(v){ return Math.round(v*100) + "%"; }
+function db(v){ const r = Math.round(v*10)/10; return (r > 0 ? "+" : r < 0 ? "\u2212" : "") + Math.abs(r).toFixed(1) + " dB"; }
+function toPlain(p, n){
+  n = Math.min(1, Math.max(0, n));
+  let v = p.scale === "log" ? p.min * Math.pow(p.max/p.min, n) : p.min + n*(p.max - p.min);
+  return p.int ? Math.round(v) : v;
+}
+function toNorm(p, v){
+  return p.scale === "log" ? Math.log(v/p.min)/Math.log(p.max/p.min) : (v - p.min)/(p.max - p.min);
+}
+
+/* ============================================================
+   Host bridge. Inside the plugin, JUCE's WebView backend is
+   used; in a normal browser, a local stand-in with a small
+   simulation drives the loop view so the page is testable.
+   ============================================================ */
+const Host = (() => {
+  const juce = window.__JUCE__ && window.__JUCE__.backend;
+  const listeners = {}, values = {};
+  const fire = (id, n) => (listeners[id] || []).forEach(cb => cb(n));
+  if (juce){
+    document.body.classList.add("in-plugin");
+    // The C++ side sends {id, value} whenever a parameter changes (automation, presets),
+    // and {type:"loopview", ...} frames ~30x per second.
+    juce.addEventListener("param", e => { values[e.id] = e.value; fire(e.id, e.value); });
+    return {
+      inPlugin: true,
+      get: id => values[id],
+      set: (id, n) => { values[id] = n; juce.emitEvent("setParam", {id, value:n}); },
+      begin: id => juce.emitEvent("gesture", {id, begin:true}),
+      end: id => juce.emitEvent("gesture", {id, begin:false}),
+      on: (id, cb) => (listeners[id] = listeners[id] || []).push(cb),
+      onLoopView: cb => juce.addEventListener("loopview", cb),
+      ready: () => juce.emitEvent("uiReady", {}),
+    };
+  }
+  let loopCb = null;
+  return {
+    inPlugin: false,
+    get: id => values[id],
+    set: (id, n) => { values[id] = n; },
+    begin(){}, end(){},
+    on: (id, cb) => (listeners[id] = listeners[id] || []).push(cb),
+    onLoopView: cb => { loopCb = cb; },
+    ready(){ startSimulation(v => loopCb && loopCb(v)); },
+  };
+})();
+
+/* ============================================================
+   Knob widget
+   ============================================================ */
+const knobs = {};
+const SIZE = 46, BIG = 58, ARC = 270, START = 135;
+function polar(cx, cy, r, deg){ const a = deg*Math.PI/180; return [cx + r*Math.cos(a), cy + r*Math.sin(a)]; }
+function arcPath(cx, cy, r, a0, a1){
+  const [x0,y0] = polar(cx,cy,r,a0), [x1,y1] = polar(cx,cy,r,a1);
+  return `M${x0} ${y0} A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1} ${y1}`;
+}
+function makeKnob(id, p, mountId){
+  const el = document.createElement("div");
+  el.className = "knob" + (p.big ? " big" : "");
+  el.tabIndex = 0; el.setAttribute("role", "slider"); el.setAttribute("aria-label", p.label);
+  const s = p.big ? BIG : SIZE, c = s/2 + 5, r = s/2;
+  const color = `var(${GROUP_COLOR[p.group || "g_loop"]})`;
+  const gid = "kgrad_" + id;
+  el.innerHTML = `
+    <svg width="${s+10}" height="${s+10}" viewBox="0 0 ${s+10} ${s+10}" aria-hidden="true">
+      <defs>
+        <radialGradient id="${gid}" cx="40%" cy="30%" r="75%">
+          <stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#e2e2e7"/>
+          <stop offset=".85" stop-color="#a9a9b2"/><stop offset="1" stop-color="#8d8d97"/>
+        </radialGradient>
+      </defs>
+      <path d="${arcPath(c,c,r+1.5,START,START+ARC)}" stroke="#9a9aa3" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path class="val" d="" stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <circle cx="${c}" cy="${c+1.2}" r="${r-4}" fill="rgba(0,0,0,.25)"/>
+      <circle cx="${c}" cy="${c}" r="${r-4}" fill="url(#${gid})" stroke="#6d6d76" stroke-width="1"/>
+      <ellipse cx="${c}" cy="${c - r*0.38}" rx="${r*0.45}" ry="${r*0.2}" fill="rgba(255,255,255,.75)"/>
+      <line class="ptr" x1="${c}" y1="${c}" x2="${c}" y2="${c - r + 8}" stroke="#000" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+    <div class="name">${p.label}</div><div class="value"></div>`;
+  document.getElementById(mountId).appendChild(el);
+  const k = {id, p, el, c, r, norm: toNorm(p, p.def)};
+  knobs[id] = k;
+
+  const set = (n, fromHost) => {
+    n = Math.min(1, Math.max(0, n));
+    if (p.int){ n = toNorm(p, toPlain(p, n)); }
+    k.norm = n; draw(k);
+    if (!fromHost) Host.set(id, n);
+    onParamChanged(id);
+  };
+  k.set = set;
+  let dragY = null, startN = 0;
+  el.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    el.focus(); el.setPointerCapture(e.pointerId);
+    dragY = e.clientY; startN = k.norm; Host.begin(id);
+  });
+  el.addEventListener("pointermove", e => {
+    if (dragY === null) return;
+    const range = e.shiftKey ? 900 : 180;
+    set(startN + (dragY - e.clientY)/range);
+    if (e.shiftKey){ dragY = e.clientY; startN = k.norm; }
+  });
+  const endDrag = () => { if (dragY !== null){ dragY = null; Host.end(id); } };
+  el.addEventListener("pointerup", endDrag); el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("dblclick", () => { Host.begin(id); set(toNorm(p, p.def)); Host.end(id); });
+  el.addEventListener("wheel", e => { e.preventDefault(); Host.begin(id); set(k.norm - Math.sign(e.deltaY)*(e.shiftKey ? 0.002 : 0.02)); Host.end(id); }, {passive:false});
+  el.addEventListener("keydown", e => {
+    const step = p.int ? 1/(p.max - p.min) : (e.shiftKey ? 0.002 : 0.02);
+    const d = {ArrowUp:step, ArrowRight:step, ArrowDown:-step, ArrowLeft:-step}[e.key];
+    if (d){ e.preventDefault(); Host.begin(id); set(k.norm + d); Host.end(id); }
+  });
+  Host.on(id, n => set(n, true));
+  draw(k);
+}
+function draw(k){
+  const a = START + ARC*k.norm, el = k.el, v = toPlain(k.p, k.norm);
+  el.querySelector(".val").setAttribute("d", k.norm > 0.002 ? arcPath(k.c,k.c,k.r+1.5,START,a) : "");
+  el.querySelector(".ptr").setAttribute("transform", `rotate(${a + 90} ${k.c} ${k.c})`);
+  el.querySelector(".value").textContent = k.p.fmt(v);
+  el.setAttribute("aria-valuetext", k.p.fmt(v));
+}
+function plain(id){ return toPlain(PARAMS[id], knobs[id] ? knobs[id].norm : toNorm(PARAMS[id], PARAMS[id].def)); }
+
+/* ============================================================
+   Build the panel
+   ============================================================ */
+for (const [id, p] of Object.entries(PARAMS)) if (p.group) makeKnob(id, p, p.group);
+// Tempo-synced length shares the loop knob's slot: a second knob, swapped in when sync is on.
+makeKnob("division", PARAMS.division, "g_loop");
+const loopKnob = knobs.loop.el, divKnob = knobs.division.el;
+loopKnob.after(divKnob);
+
+const toggles = {};
+function makeToggle(id, el, def){
+  toggles[id] = {get: () => el.getAttribute("aria-checked") === "true"};
+  const set = (on, fromHost) => {
+    el.setAttribute("aria-checked", on ? "true" : "false");
+    if (!fromHost) Host.set(id, on ? 1 : 0);
+    onParamChanged(id);
+  };
+  el.addEventListener("click", () => set(!toggles[id].get()));
+  Host.on(id, n => set(n >= 0.5, true));
+  set(def, true);
+}
+makeToggle("sync", document.getElementById("sync"), false);
+makeToggle("resetOnPlay", document.getElementById("resetOnPlay"), true);
+
+const stereoEl = document.getElementById("stereo");
+function setStereo(v, fromHost){
+  [...stereoEl.children].forEach(b => b.setAttribute("aria-pressed", b.dataset.v == v ? "true" : "false"));
+  if (!fromHost) Host.set("stereoSplit", v);
+}
+stereoEl.addEventListener("click", e => { if (e.target.dataset.v != null) setStereo(+e.target.dataset.v); });
+Host.on("stereoSplit", n => setStereo(n >= 0.5 ? 1 : 0, true));
+
+const seedEl = document.getElementById("seed");
+seedEl.addEventListener("change", () => {
+  const v = Math.max(0, Math.min(9999, parseInt(seedEl.value) || 0)); seedEl.value = v;
+  Host.set("seed", v/9999);
+});
+Host.on("seed", n => { seedEl.value = Math.round(n*9999); });
+
+function onParamChanged(id){
+  if (id === "sync"){
+    const on = toggles.sync && toggles.sync.get();
+    loopKnob.style.display = on ? "none" : ""; divKnob.style.display = on ? "" : "none";
+  }
+}
+onParamChanged("sync");
+// Version comes from the plugin build (CMake project version), so it can't go stale.
+(() => {
+  const d = window.__JUCE__ && window.__JUCE__.initialisationData && window.__JUCE__.initialisationData.version;
+  const v = Array.isArray(d) ? d[0] : d;
+  document.getElementById("version").textContent = v ? "v" + v : "preview";
+})();
+
+/* ============================================================
+   Loop buffer view
+   frame = {values: Float32Array(-1..1), age: Float32Array(seconds since written),
+            freshPct: number, loopMs: number}
+   ============================================================ */
+const canvas = document.getElementById("loop");
+const RAMP = ["#61bb46","#fdb827","#f5821f","#e03a3e","#963d97","#009ddc"];
+const rampRGB = RAMP.map(h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16)));
+function ageColor(t){            // t: 0 = just written \u2026 1 = stale; beyond 1 fades out
+  if (t >= 1){ const f = Math.max(0.35, 1 - (t - 1)*0.5); const b = rampRGB[5]; return `rgb(${b[0]*f|0},${b[1]*f|0},${b[2]*f|0})`; }
+  const x = t*(rampRGB.length - 1), i = Math.floor(x), f = x - i;
+  const a = rampRGB[i], b = rampRGB[Math.min(rampRGB.length-1, i+1)];
+  return `rgb(${a[0]+(b[0]-a[0])*f|0},${a[1]+(b[1]-a[1])*f|0},${a[2]+(b[2]-a[2])*f|0})`;
+}
+let lastFrame = null;
+function drawLoop(frame){
+  lastFrame = frame;
+  if (frame.sampleRate && frame.sampleRate !== displaySR){ displaySR = frame.sampleRate; if (knobs.chunk) draw(knobs.chunk); }
+  const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+  if (canvas.width !== W*dpr){ canvas.width = W*dpr; canvas.height = H*dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  const n = frame.values.length, cw = W/n, mid = H/2;
+  // Colour = time since that part was written: green = now, blue = ~1 s ago, then dims.
+  const staleAfter = 1.0;
+  for (let i = 0; i < n; i++){
+    const v = frame.values[i], h = Math.max(1, Math.abs(v)*(mid - 4));
+    ctx.fillStyle = ageColor(frame.age[i]/staleAfter);
+    ctx.fillRect(Math.floor(i*cw), mid - h, Math.ceil(cw), h*2);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.12)"; ctx.fillRect(0, mid, W, 1);
+  if (frame.playhead != null){ ctx.fillStyle = "#fff"; ctx.fillRect(frame.playhead*W - 1, 0, 2, H); }
+  document.getElementById("lvFresh").textContent = Math.round(frame.freshPct) + "%";
+  document.getElementById("lvLen").textContent = PARAMS.loop.fmt(frame.loopMs);
+}
+Host.onLoopView(drawLoop);
+window.addEventListener("resize", () => lastFrame && drawLoop(lastFrame));
+
+/* ============================================================
+   Browser-only simulation (not used in the plugin): a cheap
+   version of the real algorithm on a synthetic signal, so the
+   loop view responds to the knobs while you judge the design.
+   ============================================================ */
+function startSimulation(emit){
+  const N = 240, SR = 48000;
+  const vals = new Float32Array(N), target = new Float32Array(N), age = new Float32Array(N).fill(99);
+  let t = 0, pos = 0, pool = 0, last = performance.now();
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function step(now){
+    const dt = Math.min(0.1, (now - last)/1000); last = now; t += dt;
+    const loopMs = toggles.sync.get() ? [31,62,125,250,500,1000,2000,4000,8000][plain("division")] : plain("loop");
+    const loopS = loopMs/1000, bits = plain("bits"), rnd = plain("randomness"), mem = plain("memory");
+    const chunkCells = Math.max(1, Math.round(plain("chunk")/(loopS*SR)*N));
+    // synthetic input: a few drifting partials with a pulsing envelope
+    const env = 0.35 + 0.65*Math.pow(0.5 + 0.5*Math.sin(t*2.1), 3);
+    const adv = Math.max(1, Math.round(dt/loopS*N));
+    for (let k = 0; k < adv; k++){
+      const i = (pos + k) % N, ph = (i/N)*loopS;
+      target[i] = env*(0.6*Math.sin(2*Math.PI*(110 + 40*Math.sin(t*.3))*ph*8) + 0.3*Math.sin(2*Math.PI*(330 + 90*Math.sin(t*.7))*ph*8 + t));
+    }
+    pos = (pos + adv) % N;
+    // budget -> cells per second (scaled to the view's resolution)
+    const samplesPerSec = plain("budget")*1000/(bits/8);
+    pool = Math.min(pool + samplesPerSec*dt/(loopS*SR)*N, Math.max(4, chunkCells*2));
+    let fresh = 0;
+    const nChunks = Math.ceil(N/chunkCells);
+    const scores = [];
+    for (let c = 0; c < nChunks; c++){
+      let e = 0; for (let j = c*chunkCells; j < Math.min(N, (c+1)*chunkCells); j++) e += Math.abs(target[j] - vals[j]);
+      scores.push([(1 - rnd)*e/chunkCells + rnd*Math.random(), c]);
+    }
+    scores.sort((a,b) => b[0] - a[0]);
+    for (const [, c] of scores){
+      if (pool < chunkCells) break;
+      pool -= chunkCells;
+      for (let j = c*chunkCells; j < Math.min(N, (c+1)*chunkCells); j++){ vals[j] = target[j]; age[j] = 0; fresh++; }
+    }
+    const g = mem >= 1 ? 1 : Math.pow(Math.max(mem, 1e-4), dt);
+    for (let i = 0; i < N; i++){ age[i] += dt; if (age[i] > 0) vals[i] *= g; }
+    const freshRecent = age.reduce((a, x) => a + (x < loopS ? 1 : 0), 0);
+    emit({values: vals, age, freshPct: freshRecent/N*100, loopMs, playhead: pos/N});
+    if (!reduce) requestAnimationFrame(step); else setTimeout(() => step(performance.now()), 250);
+  }
+  requestAnimationFrame(step);
+}
+
+Host.ready();
+</script>
+</body>
+</html>

@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bandwidth Crusher</title>
+<style>
+:root{
+  --bg:#111214; --panel:#1a1c1f; --panel2:#222529; --line:#2e3238;
+  --text:#e8e6e1; --muted:#8d9198; --accent:#f2c14e; --accent2:#5ec2b7;
+  --danger:#e06c5a; --wave-before:#4a5059; --wave-after:#f2c14e;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#f4f2ed; --panel:#ffffff; --panel2:#efece6; --line:#dcd8d0;
+    --text:#1d1f22; --muted:#6b6f75; --accent:#b8860b; --accent2:#2a8a7f;
+    --danger:#c0462f; --wave-before:#b9bcc1; --wave-after:#b8860b;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 var(--sans)}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+h1{font:700 22px/1 var(--mono);letter-spacing:-.5px;margin:0}
+h1 span{color:var(--accent)}
+.status{font:12px var(--mono);color:var(--muted)}
+.status.ok{color:var(--accent2)} .status.err{color:var(--danger)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+button,select,input[type=number]{
+  font:13px var(--sans);color:var(--text);background:var(--panel2);
+  border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--muted)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--accent);color:#111;border-color:var(--accent);font-weight:600}
+button.danger.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
+input[type=number]{width:80px;cursor:text}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+#drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;color:var(--muted);cursor:pointer}
+#drop.over{border-color:var(--accent);color:var(--text)}
+#drop b{color:var(--text)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:var(--panel2)}
+.seg button.on{background:var(--text);color:var(--bg)}
+#time{font:13px var(--mono);color:var(--muted);min-width:110px}
+.wavewrap{position:relative;margin-top:10px}
+canvas{display:block;width:100%}
+#wave{height:220px;background:var(--panel2);border-radius:8px 8px 0 0;cursor:crosshair;touch-action:none}
+#ruler{height:22px;background:var(--panel2);border-top:1px solid var(--line);border-radius:0 0 8px 8px;cursor:pointer}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+.badge{font:11px var(--mono);padding:2px 7px;border-radius:20px;background:var(--panel2);color:var(--muted)}
+.badge.stale{background:var(--accent);color:#111}
+.progress{height:4px;background:var(--panel2);border-radius:3px;overflow:hidden;width:120px;display:none}
+.progress div{height:100%;width:0;background:var(--accent)}
+.params{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.param{background:var(--panel2);border:1px solid transparent;border-radius:8px;padding:9px 11px}
+.param.sel{border-color:var(--accent)}
+.param .top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.param label{font-weight:600;cursor:pointer}
+.param .val{font:12px var(--mono);color:var(--muted)}
+.param .auto{font:10px var(--mono);color:#111;background:var(--accent2);border-radius:4px;padding:1px 5px;display:none}
+.param.automated .auto{display:inline}
+.param.automated input[type=range]{opacity:.35}
+.param .desc{font-size:11.5px;color:var(--muted);margin-top:3px}
+input[type=range]{width:100%;accent-color:var(--accent);margin:6px 0 0}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:4px}
+@media (max-width:600px){ #wave{height:170px} }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>bandwidth<span>/</span>crusher</h1>
+    <span id="pystatus" class="status">loading Python…</span>
+  </header>
+
+  <div class="card">
+    <div id="drop"><b>Drop a WAV or MP3 here</b> or click to choose a file
+      <input id="file" type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" hidden></div>
+
+    <div id="editor" style="display:none">
+      <div class="row" style="margin-top:12px">
+        <button id="play" disabled>▶ Play</button>
+        <div class="seg"><button id="abBefore" class="on">Before</button><button id="abAfter" disabled>After</button></div>
+        <span id="time">0:00.0 / 0:00.0</span>
+        <span class="spacer"></span>
+        <span id="stale" class="badge">not rendered</span>
+        <div class="progress" id="prog"><div></div></div>
+        <button id="render" class="primary" disabled>Render</button>
+        <button id="download" disabled>Download WAV</button>
+      </div>
+
+      <div class="wavewrap">
+        <canvas id="wave"></canvas>
+        <canvas id="ruler"></canvas>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <span>Automation:</span>
+        <select id="lane"></select>
+        <button id="undo" disabled title="Ctrl/Cmd+Z">↶ Undo</button>
+        <button id="redo" disabled title="Ctrl/Cmd+Shift+Z">↷ Redo</button>
+        <button id="clearLane">Clear lane</button>
+        <button id="clearAll" class="danger">Clear all</button>
+      </div>
+      <div class="hint">Click the waveform to add a point · drag to move · double-click or right-click a point to delete · click the strip under it to seek · Space plays/pauses.
+        <span class="swatch" style="background:var(--wave-before)"></span>before <span class="swatch" style="background:var(--wave-after)"></span>after</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Parameters</h2>
+    <div class="params" id="params"></div>
+    <div class="row" style="margin-top:12px">
+      <label>Stereo budget
+        <select id="stereo"><option value="1">Shared</option><option value="0">Split per channel</option></select></label>
+      <label>Seed <input id="seed" type="number" value="1" min="0" step="1"></label>
+      <span class="spacer"></span>
+      <button id="savePreset">Save preset</button>
+      <button id="loadPreset">Load preset</button>
+      <input id="presetFile" type="file" accept=".json,application/json" hidden>
+      <button id="resetParams">Reset knobs</button>
+    </div>
+  </div>
+</main>
+
+<script type="text/x-python" id="pysrc">
+"""
+Bandwidth-limited loop buffer effect ("Bad Apple" style, but for audio).
+
+A loop buffer plays on repeat. The input keeps writing what the buffer
+*should* contain (the target). Only a limited number of bytes per second may
+actually be copied into the playing buffer, so un-updated parts keep playing
+stale audio from earlier passes.
+
+All parameters are given per control block (default 10 ms), so they can be
+automated. Everything is numpy-vectorised per block so it runs fine in Pyodide.
+"""
+import numpy as np
+
+BLOCK_MS = 10.0
+
+
+def db_to_lin(db):
+    return 10.0 ** (np.asarray(db, dtype=np.float64) / 20.0)
+
+
+def soft_limit(x, knee=0.8):
+    """Pass-through below `knee`, smooth tanh saturation above it (peak < 1.0)."""
+    a = np.abs(x)
+    over = a > knee
+    if not np.any(over):
+        return x
+    y = x.copy()
+    head = 1.0 - knee
+    y[over] = np.sign(x[over]) * (knee + head * np.tanh((a[over] - knee) / head))
+    return y
+
+
+def quantize(x, bits):
+    """Round to a signed integer grid with `bits` bits."""
+    levels = float(2 ** (int(bits) - 1) - 1)
+    if levels < 1:
+        levels = 1.0
+    return np.round(np.clip(x, -1.0, 1.0) * levels) / levels
+
+
+class BandwidthFX:
+    """
+    Stateful processor. Call `step(n_blocks)` repeatedly until it returns True,
+    then read `self.out` (shape: channels x samples).
+
+    audio:   float array, channels x samples, range about -1..1
+    sr:      sample rate
+    params:  dict of per-block float arrays (length = n_blocks):
+               budget_kbs, loop_ms, bits, randomness, chunk (samples),
+               smooth (0..1 chunk edge crossfade), memory (0..1, fraction of
+               stale audio left after 1 s), threshold, in_gain_db, out_gain_db, mix
+    stereo_shared: True = one budget shared by all channels,
+                   False = budget split evenly per channel
+    seed:    random seed for repeatable renders
+    """
+
+    PARAM_NAMES = ("budget_kbs", "loop_ms", "bits", "randomness", "chunk",
+                   "smooth", "memory", "threshold", "in_gain_db", "out_gain_db", "mix")
+    # Defaults for params added later, so older callers/presets keep working.
+    PARAM_DEFAULTS = {"smooth": 0.5, "memory": 1.0}
+
+    def __init__(self, audio, sr, params, stereo_shared=True, seed=1,
+                 block_ms=BLOCK_MS):
+        # float32 keeps memory down for long songs (matters in the browser)
+        self.x = np.atleast_2d(np.asarray(audio, dtype=np.float32))
+        self.ch, self.n = self.x.shape
+        self.sr = int(sr)
+        self.block = max(16, int(round(self.sr * block_ms / 1000.0)))
+        self.n_blocks = int(np.ceil(self.n / self.block))
+        self.params = {}
+        for k in self.PARAM_NAMES:
+            arr = np.asarray(params.get(k, self.PARAM_DEFAULTS.get(k)), dtype=np.float64).ravel()
+            if arr.size == 1:
+                arr = np.full(self.n_blocks, arr[0])
+            if arr.size < self.n_blocks:  # pad with last value
+                arr = np.concatenate([arr, np.full(self.n_blocks - arr.size, arr[-1])])
+            self.params[k] = arr
+        self.shared = bool(stereo_shared)
+        self.rng = np.random.default_rng(int(seed))
+        self.out = np.zeros_like(self.x)
+
+        self.L = None          # current loop length in samples
+        self.target = None     # what the buffer should be (ch x L)
+        self.buf = None        # what is actually playing (ch x L)
+        self.pos = 0           # play/write pointer inside the loop
+        self.pool = 0.0        # unspent sample budget, saved up between blocks
+        self.last_out = np.zeros(self.ch)
+        self.declick = None    # (offset per channel) applied after a resize
+        self.b = 0             # next block index
+
+    # ---- loop buffer management -------------------------------------------
+    def _resize(self, new_L):
+        if self.L is None:
+            self.L = new_L
+            self.target = np.zeros((self.ch, new_L))
+            self.buf = np.zeros((self.ch, new_L))
+            self.pos = 0
+            return
+        old_L = self.L
+        # Resample the loop contents so the pointer keeps its relative phase.
+        src = np.linspace(0, old_L, new_L, endpoint=False)
+        idx = np.arange(old_L + 1)
+        def stretch(a):
+            ext = np.concatenate([a, a[:, :1]], axis=1)
+            return np.stack([np.interp(src, idx, ext[c]) for c in range(self.ch)])
+        self.target = stretch(self.target)
+        self.buf = stretch(self.buf)
+        self.pos = int(self.pos * new_L / old_L) % new_L
+        self.L = new_L
+        self.declick = True
+
+    # ---- one control block -------------------------------------------------
+    def _process_block(self, b):
+        p = {k: v[b] for k, v in self.params.items()}
+        s0 = b * self.block
+        s1 = min(self.n, s0 + self.block)
+        m = s1 - s0
+
+        new_L = max(8, int(round(p["loop_ms"] * self.sr / 1000.0)))
+        if self.L is None or abs(new_L - self.L) > max(1, 0.01 * self.L):
+            self._resize(new_L)
+        L = self.L
+
+        bits = int(np.clip(round(p["bits"]), 2, 16))
+        dry = self.x[:, s0:s1] * db_to_lin(p["in_gain_db"])
+
+        # 1) The input writes the *target* at the positions being played now.
+        positions = (self.pos + np.arange(m)) % L
+        self.target[:, positions] = quantize(dry, bits)
+
+        # 2) Spend the byte budget on updating the playing buffer.
+        bytes_per_sample = bits / 8.0
+        earned = p["budget_kbs"] * 1000.0 * (m / self.sr) / bytes_per_sample
+        chunk = int(np.clip(round(p["chunk"]), 1, L))
+        # Save up unspent budget so big chunks still get written at low budgets,
+        # but cap it so a quiet stretch can't bank a huge burst for later.
+        self.pool = min(self.pool + earned, max(2.0 * earned, 2.0 * chunk * self.ch))
+        n_samples = int(self.pool)
+        n_chunks = int(np.ceil(L / chunk))
+        pad = n_chunks * chunk - L
+
+        err = np.abs(self.target - self.buf)                 # ch x L
+        if pad:
+            err = np.concatenate([err, np.zeros((self.ch, pad))], axis=1)
+        err = err.reshape(self.ch, n_chunks, chunk).mean(axis=2)  # ch x n_chunks
+
+        if self.shared:
+            groups = [(list(range(self.ch)), n_samples)]
+        else:
+            per = n_samples // self.ch
+            groups = [([c], per) for c in range(self.ch)]
+
+        # Edge crossfade: a written chunk is always written fully, and its new
+        # audio also fades h samples into the stale audio on either side, so
+        # there is no hard jump at its edges. (Those fade samples are a small
+        # free bonus on top of the budget.)
+        h = int(round(np.clip(p["smooth"], 0.0, 1.0) * chunk / 2))
+        if h >= 1 and chunk >= 4:
+            ramp = (np.arange(h) + 0.5) / h                         # 0 -> 1
+            win = np.concatenate([ramp, np.ones(chunk), ramp[::-1]])
+            win_off = np.arange(win.size) - h                       # relative to chunk start
+        else:
+            win = None
+        mask = np.zeros((self.ch, L)) if win is not None else None
+
+        r = float(np.clip(p["randomness"], 0.0, 1.0))
+        thr = float(max(0.0, p["threshold"]))
+        spent = 0
+        for chans, budget in groups:
+            k = budget // chunk
+            if k <= 0:
+                continue
+            e = err[chans].ravel()                       # candidates: (ch, chunk)
+            score = e / (e.max() + 1e-12)
+            if r > 0:
+                score = (1.0 - r) * score + r * self.rng.random(score.size)
+            score[e <= thr] = -1.0                       # already close enough
+            score[e <= 1e-9] = -1.0                      # nothing to fix
+            valid = int(np.count_nonzero(score >= 0))
+            k = min(k, valid)
+            if k <= 0:
+                continue
+            pick = np.argpartition(score, -k)[-k:]
+            spent += k * chunk
+            ci = pick // n_chunks                         # index into chans
+            ki = pick % n_chunks
+            for local_c in np.unique(ci):
+                c = chans[local_c]
+                starts = ki[ci == local_c] * chunk
+                if win is None:
+                    cols = (starts[:, None] + np.arange(chunk)[None, :]).ravel()
+                    cols = cols[cols < L]
+                    self.buf[c, cols] = self.target[c, cols]
+                else:
+                    cols = ((starts[:, None] + win_off[None, :]) % L).ravel()
+                    np.add.at(mask[c], cols, np.tile(win, starts.size))
+        if mask is not None:
+            np.clip(mask, 0.0, 1.0, out=mask)
+            self.buf += mask * (self.target - self.buf)
+        self.pool = max(0.0, self.pool - spent)
+
+        # 3) Play the buffer at the current positions.
+        wet = self.buf[:, positions].copy()
+
+        # 4) Memory: every position fades a little each time it is played.
+        #    `memory` = fraction left after 1 second (1.0 = stale audio never fades),
+        #    so it behaves the same whatever the loop length.
+        mem = float(np.clip(p["memory"], 0.0, 1.0))
+        if mem < 1.0:
+            g = mem ** (L / self.sr) if mem > 0 else 0.0
+            self.buf[:, positions] *= g
+
+        if self.declick:
+            offset = self.last_out - wet[:, 0]
+            ramp = np.clip(1.0 - np.arange(m) / min(m, max(1, int(0.004 * self.sr))), 0, 1)
+            wet += offset[:, None] * ramp[None, :]
+            self.declick = None
+
+        self.pos = (self.pos + m) % L
+        mix = float(np.clip(p["mix"], 0.0, 1.0))
+        y = (1.0 - mix) * dry + mix * wet
+        y *= db_to_lin(p["out_gain_db"])
+        y = soft_limit(y)
+        self.out[:, s0:s1] = y
+        self.last_out = wet[:, -1]
+
+    def step(self, n_blocks=200):
+        """Process up to n_blocks blocks. Returns True when finished."""
+        end = min(self.n_blocks, self.b + n_blocks)
+        while self.b < end:
+            self._process_block(self.b)
+            self.b += 1
+        return self.b >= self.n_blocks
+
+    @property
+    def progress(self):
+        return self.b / max(1, self.n_blocks)
+
+    def render(self):
+        while not self.step(1000):
+            pass
+        return self.out
+
+
+def process(audio, sr, params, stereo_shared=True, seed=1):
+    """Convenience: render everything in one go."""
+    return BandwidthFX(audio, sr, params, stereo_shared, seed).render()
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+"use strict";
+// ---------- parameter definitions ----------
+const PARAMS = [
+  {id:"budget_kbs", label:"Budget", min:0.5, max:1000, def:40, scale:"log", unit:"kB/s", digits:1,
+   desc:"Bytes per second the loop may be rewritten with. The main degradation control."},
+  {id:"loop_ms", label:"Loop length", min:10, max:1000, def:120, scale:"log", unit:"ms", digits:0,
+   desc:"Short = pitched buzz, long = smeary wash."},
+  {id:"bits", label:"Bit depth", min:2, max:16, def:12, scale:"lin", unit:"bit", digits:0, int:true,
+   desc:"Fewer bits = more (cruder) samples fit in the budget."},
+  {id:"randomness", label:"Greedy ↔ Random", min:0, max:1, def:0.3, scale:"lin", unit:"", digits:2,
+   desc:"0 fixes the worst errors first (clean); 1 picks randomly (fizzy)."},
+  {id:"chunk", label:"Chunk size", min:1, max:4096, def:1, scale:"log", unit:"smp", digits:0, int:true, ms:true,
+   desc:"Update single samples or longer runs. Small = fizzy hiss, large = stutters and fragments of old audio."},
+  {id:"smooth", label:"Chunk edge smoothing", min:0, max:1, def:0.5, scale:"lin", unit:"", digits:2, pct:true,
+   desc:"Crossfade written chunks into the stale audio around them. Only matters with bigger chunks."},
+  {id:"memory", label:"Memory", min:0, max:1, def:1, scale:"lin", unit:"", digits:2, pct:true,
+   desc:"How much stale audio is left after 1 second. 100% = it lingers forever, 0% = gone after one pass."},
+  {id:"threshold", label:"Error threshold", min:0, max:0.2, def:0, scale:"lin", unit:"", digits:3,
+   desc:"Skip samples already this close; saves budget for big changes."},
+  {id:"in_gain_db", label:"Input gain", min:-24, max:24, def:0, scale:"lin", unit:"dB", digits:1,
+   desc:"Before the effect."},
+  {id:"out_gain_db", label:"Output gain", min:-24, max:12, def:0, scale:"lin", unit:"dB", digits:1,
+   desc:"After the mix, into a soft limiter."},
+  {id:"mix", label:"Dry / Wet", min:0, max:1, def:1, scale:"lin", unit:"", digits:2, pct:true,
+   desc:"Blend of original and crushed signal."},
+];
+const P = Object.fromEntries(PARAMS.map(p => [p.id, p]));
+const LANE_COLORS = ["#f2c14e","#5ec2b7","#e06c5a","#9b8cf2","#7fc65a","#e889c4","#62a8ea","#d8925a","#c8c8c8"];
+
+function toNorm(p, v){
+  if (p.scale === "log") return Math.log(v/p.min)/Math.log(p.max/p.min);
+  return (v - p.min)/(p.max - p.min);
+}
+function fromNorm(p, n){
+  n = Math.min(1, Math.max(0, n));
+  let v = p.scale === "log" ? p.min*Math.pow(p.max/p.min, n) : p.min + n*(p.max - p.min);
+  if (p.int) v = Math.round(v);
+  return v;
+}
+function fmt(p, v){
+  if (p.pct) return Math.round(v*100) + "%";
+  if (p.ms){
+    const sr = (typeof inBuf !== "undefined" && inBuf) ? inBuf.sampleRate : 48000;
+    const ms = v/sr*1000;
+    return Math.round(v) + " smp (" + (ms < 1 ? ms.toFixed(2) : ms < 10 ? ms.toFixed(1) : Math.round(ms)) + " ms)";
+  }
+  return (+v).toFixed(p.digits) + (p.unit ? " " + p.unit : "");
+}
+
+// ---------- state ----------
+const state = {
+  knobs: Object.fromEntries(PARAMS.map(p => [p.id, p.def])),
+  auto: Object.fromEntries(PARAMS.map(p => [p.id, []])),   // [{t:0..1, v:0..1 normalized}]
+  lane: "budget_kbs",
+};
+let undoStack = [], redoStack = [];
+let audioCtx = null, inBuf = null, outBuf = null, fileName = "audio";
+let renderedSig = null;   // signature of settings used for last render
+
+// ---------- Python ----------
+let pyodide = null;
+const pyReady = (async () => {
+  const st = document.getElementById("pystatus");
+  try {
+    pyodide = await loadPyodide();
+    st.textContent = "loading numpy…";
+    await pyodide.loadPackage("numpy");
+    pyodide.runPython(document.getElementById("pysrc").textContent);
+    st.textContent = "Python ready"; st.className = "status ok";
+    updateButtons();
+  } catch (e) {
+    st.textContent = "Python failed to load (are you online?) — " + e.message; st.className = "status err";
+    throw e;
+  }
+})();
+
+// ---------- param UI ----------
+const paramsEl = document.getElementById("params");
+const laneSel = document.getElementById("lane");
+PARAMS.forEach((p, i) => {
+  const d = document.createElement("div");
+  d.className = "param"; d.id = "card_" + p.id;
+  d.innerHTML = `<div class="top"><label title="Show this automation lane">${p.label}</label>
+      <span class="auto">AUTO</span><span class="val" id="val_${p.id}"></span></div>
+    <input type="range" min="0" max="1" step="0.001" id="rng_${p.id}">
+    <div class="desc">${p.desc}</div>`;
+  paramsEl.appendChild(d);
+  const r = d.querySelector("input");
+  r.value = toNorm(p, state.knobs[p.id]);
+  r.addEventListener("input", () => { state.knobs[p.id] = fromNorm(p, +r.value); refreshParams(); markStale(); });
+  r.addEventListener("dblclick", () => { state.knobs[p.id] = p.def; r.value = toNorm(p, p.def); refreshParams(); markStale(); });
+  d.querySelector("label").addEventListener("click", () => selectLane(p.id));
+  const o = document.createElement("option"); o.value = p.id; o.textContent = p.label; laneSel.appendChild(o);
+});
+laneSel.addEventListener("change", () => selectLane(laneSel.value));
+function selectLane(id){ state.lane = id; laneSel.value = id; refreshParams(); drawWave(); }
+function refreshParams(){
+  PARAMS.forEach(p => {
+    document.getElementById("val_" + p.id).textContent = fmt(p, state.knobs[p.id]);
+    document.getElementById("rng_" + p.id).value = toNorm(p, state.knobs[p.id]);
+    const c = document.getElementById("card_" + p.id);
+    c.classList.toggle("automated", state.auto[p.id].length > 0);
+    c.classList.toggle("sel", state.lane === p.id);
+  });
+  [...laneSel.options].forEach(o => o.textContent = P[o.value].label + (state.auto[o.value].length ? " ●" : ""));
+}
+document.getElementById("resetParams").onclick = () => {
+  PARAMS.forEach(p => state.knobs[p.id] = p.def); refreshParams(); markStale();
+};
+document.getElementById("stereo").onchange = markStale;
+document.getElementById("seed").oninput = markStale;
+
+// ---------- automation helpers ----------
+function evalLane(points, t){   // returns normalized value or null
+  if (!points.length) return null;
+  if (t <= points[0].t) return points[0].v;
+  for (let i = 1; i < points.length; i++){
+    if (t <= points[i].t){
+      const a = points[i-1], b = points[i];
+      const f = (b.t - a.t) < 1e-9 ? 1 : (t - a.t)/(b.t - a.t);
+      return a.v + f*(b.v - a.v);
+    }
+  }
+  return points[points.length-1].v;
+}
+function snapshot(){ return JSON.stringify(state.auto); }
+function pushUndo(snap){ undoStack.push(snap); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateButtons(); }
+function restore(snap){ state.auto = JSON.parse(snap); refreshParams(); drawWave(); markStale(); updateButtons(); }
+function undo(){ if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
+function redo(){ if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
+document.getElementById("undo").onclick = undo;
+document.getElementById("redo").onclick = redo;
+document.getElementById("clearLane").onclick = () => {
+  if (!state.auto[state.lane].length) return;
+  pushUndo(snapshot()); state.auto[state.lane] = []; refreshParams(); drawWave(); markStale();
+};
+const clearAllBtn = document.getElementById("clearAll");
+let clearArmTimer = null;
+clearAllBtn.onclick = () => {
+  if (!clearAllBtn.classList.contains("armed")){
+    clearAllBtn.classList.add("armed"); clearAllBtn.textContent = "Sure? Click again";
+    clearArmTimer = setTimeout(disarm, 3000); return;
+  }
+  disarm();
+  if (!PARAMS.some(p => state.auto[p.id].length)) return;
+  pushUndo(snapshot()); PARAMS.forEach(p => state.auto[p.id] = []); refreshParams(); drawWave(); markStale();
+};
+function disarm(){ clearTimeout(clearArmTimer); clearAllBtn.classList.remove("armed"); clearAllBtn.textContent = "Clear all"; }
+
+// ---------- file loading ----------
+const drop = document.getElementById("drop"), fileIn = document.getElementById("file");
+drop.onclick = () => fileIn.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); };
+fileIn.onchange = () => { if (fileIn.files[0]) loadFile(fileIn.files[0]); fileIn.value = ""; };
+
+async function loadFile(f){
+  stop();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  drop.innerHTML = "Decoding <b>" + escapeHtml(f.name) + "</b>…";
+  try {
+    inBuf = await audioCtx.decodeAudioData(await f.arrayBuffer());
+  } catch (e) {
+    drop.innerHTML = "<b>Couldn't decode that file.</b> Try a WAV or MP3. Click to choose another."; return;
+  }
+  fileName = f.name.replace(/\.[^.]+$/, "");
+  outBuf = null; renderedSig = null; playPos = 0; view = "before";
+  drop.innerHTML = `<b>${escapeHtml(f.name)}</b> · ${inBuf.numberOfChannels === 1 ? "mono" : "stereo"} · ${inBuf.sampleRate} Hz · ${fmtTime(inBuf.duration)} — click or drop to replace`;
+  document.getElementById("editor").style.display = "";
+  inPeaks = null; outPeaks = null;
+  setAB("before"); refreshParams(); markStale(); resizeCanvases(); updateButtons();
+}
+function escapeHtml(s){ return s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// ---------- rendering ----------
+function settingsSig(){
+  return JSON.stringify([state.knobs, state.auto, document.getElementById("stereo").value, document.getElementById("seed").value]);
+}
+function markStale(){
+  const b = document.getElementById("stale");
+  if (!inBuf) return;
+  if (!outBuf){ b.textContent = "not rendered"; b.className = "badge stale"; return; }
+  const stale = settingsSig() !== renderedSig;
+  b.textContent = stale ? "changed — re-render" : "up to date";
+  b.className = "badge" + (stale ? " stale" : "");
+}
+let rendering = false;
+async function render(){
+  if (!inBuf || rendering) return;
+  rendering = true; updateButtons();
+  const prog = document.getElementById("prog"), bar = prog.firstElementChild;
+  prog.style.display = "block"; bar.style.width = "0%";
+  try {
+    await pyReady;
+    const sr = inBuf.sampleRate, n = inBuf.length;
+    const block = Math.max(16, Math.round(sr*10/1000));   // must match Python BLOCK_MS
+    const nBlocks = Math.ceil(n/block);
+    const params = {};
+    PARAMS.forEach(p => {
+      const arr = new Float32Array(nBlocks), pts = state.auto[p.id];
+      if (!pts.length) arr.fill(state.knobs[p.id]);
+      else for (let b = 0; b < nBlocks; b++) arr[b] = fromNorm(p, evalLane(pts, Math.min(1, (b+0.5)*block/n)));
+      params[p.id] = arr;
+    });
+    const chans = []; for (let c = 0; c < inBuf.numberOfChannels; c++) chans.push(inBuf.getChannelData(c));
+    pyodide.globals.set("js_audio", chans);
+    pyodide.globals.set("js_params", params);
+    pyodide.globals.set("js_sr", sr);
+    pyodide.globals.set("js_shared", document.getElementById("stereo").value === "1");
+    pyodide.globals.set("js_seed", parseInt(document.getElementById("seed").value) || 0);
+    const sig = settingsSig();
+    pyodide.runPython(`
+import numpy as np
+_audio = np.stack([np.asarray(a.to_py(), dtype=np.float32) for a in js_audio])
+_params = {k: np.asarray(getattr(js_params, k).to_py(), dtype=np.float64) for k in BandwidthFX.PARAM_NAMES}
+fx = BandwidthFX(_audio, js_sr, _params, stereo_shared=js_shared, seed=js_seed)
+del _audio, _params
+`);
+    const step = pyodide.globals.get("fx").step;
+    let done = false;
+    while (!done){
+      done = step(100);
+      bar.style.width = (pyodide.runPython("fx.progress")*100).toFixed(1) + "%";
+      await new Promise(r => setTimeout(r, 0));   // let the page breathe
+    }
+    step.destroy();
+    const out = audioCtx.createBuffer(inBuf.numberOfChannels, n, sr);
+    for (let c = 0; c < inBuf.numberOfChannels; c++){
+      const proxy = pyodide.runPython(`fx.out[${c}].astype(np.float32)`);
+      const buf = proxy.getBuffer("f32");
+      out.copyToChannel(buf.data.slice(), c);
+      buf.release(); proxy.destroy();
+    }
+    pyodide.runPython("del fx");
+    ["js_audio","js_params"].forEach(k => pyodide.globals.delete(k));
+    outBuf = out; renderedSig = sig; outPeaks = null;
+    const wasPlaying = playing;
+    if (wasPlaying){ const pos = currentPos(); stop(); playPos = pos; }
+    setAB("after");
+    if (wasPlaying) play();
+  } catch (e) {
+    console.error(e);
+    alertBox("Render failed: " + e.message);
+  } finally {
+    rendering = false; prog.style.display = "none"; markStale(); updateButtons(); drawWave();
+  }
+}
+function alertBox(msg){ const s = document.getElementById("pystatus"); s.textContent = msg; s.className = "status err"; }
+document.getElementById("render").onclick = render;
+
+// ---------- playback (both versions play in sync, A/B just swaps gains) ----------
+let playing = false, playPos = 0, startCtxTime = 0, srcA = null, srcB = null, gA = null, gB = null, view = "before";
+function currentPos(){ return playing ? Math.min(inBuf.duration, playPos + audioCtx.currentTime - startCtxTime) : playPos; }
+function play(){
+  if (!inBuf) return;
+  audioCtx.resume();
+  if (playPos >= inBuf.duration - 0.01) playPos = 0;
+  gA = audioCtx.createGain(); gB = audioCtx.createGain();
+  gA.connect(audioCtx.destination); gB.connect(audioCtx.destination);
+  gA.gain.value = view === "before" || !outBuf ? 1 : 0;
+  gB.gain.value = 1 - gA.gain.value;
+  srcA = audioCtx.createBufferSource(); srcA.buffer = inBuf; srcA.connect(gA);
+  const t = audioCtx.currentTime + 0.03;
+  srcA.start(t, playPos);
+  if (outBuf){ srcB = audioCtx.createBufferSource(); srcB.buffer = outBuf; srcB.connect(gB); srcB.start(t, playPos); }
+  srcA.onended = () => { if (playing && currentPos() >= inBuf.duration - 0.05){ stop(); playPos = 0; } };
+  startCtxTime = t; playing = true; updateButtons(); tick();
+}
+function stop(){
+  if (!playing) return;
+  playPos = currentPos(); playing = false;
+  [srcA, srcB].forEach(s => { if (s){ s.onended = null; try{ s.stop(); }catch(e){} } });
+  srcA = srcB = null; updateButtons(); drawWave();
+}
+function setAB(v){
+  view = (v === "after" && outBuf) ? "after" : "before";
+  document.getElementById("abBefore").classList.toggle("on", view === "before");
+  document.getElementById("abAfter").classList.toggle("on", view === "after");
+  if (playing && gA){
+    const now = audioCtx.currentTime;
+    gA.gain.setTargetAtTime(view === "before" ? 1 : 0, now, 0.005);
+    gB.gain.setTargetAtTime(view === "before" ? 0 : 1, now, 0.005);
+  }
+  drawWave();
+}
+function seek(sec){
+  const was = playing; stop(); playPos = Math.max(0, Math.min(inBuf.duration, sec)); if (was) play(); else drawWave();
+}
+document.getElementById("play").onclick = () => playing ? stop() : play();
+document.getElementById("abBefore").onclick = () => setAB("before");
+document.getElementById("abAfter").onclick = () => setAB("after");
+function tick(){ if (!playing) return; drawWave(); requestAnimationFrame(tick); }
+
+// ---------- WAV export ----------
+document.getElementById("download").onclick = () => {
+  if (!outBuf) return;
+  const ch = outBuf.numberOfChannels, n = outBuf.length, sr = outBuf.sampleRate;
+  const data = new DataView(new ArrayBuffer(44 + n*ch*2));
+  const w = (o, s) => [...s].forEach((c, i) => data.setUint8(o+i, c.charCodeAt(0)));
+  w(0,"RIFF"); data.setUint32(4, 36 + n*ch*2, true); w(8,"WAVE"); w(12,"fmt ");
+  data.setUint32(16,16,true); data.setUint16(20,1,true); data.setUint16(22,ch,true);
+  data.setUint32(24,sr,true); data.setUint32(28,sr*ch*2,true); data.setUint16(32,ch*2,true); data.setUint16(34,16,true);
+  w(36,"data"); data.setUint32(40, n*ch*2, true);
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(outBuf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++){
+    const s = Math.max(-1, Math.min(1, chans[c][i]));
+    data.setInt16(o, s < 0 ? s*0x8000 : s*0x7fff, true); o += 2;
+  }
+  saveBlob(new Blob([data], {type:"audio/wav"}), fileName + "_crushed.wav");
+};
+function saveBlob(blob, name){
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------- presets ----------
+document.getElementById("savePreset").onclick = () => {
+  const preset = {app:"bandwidth-crusher", version:1, knobs:state.knobs, automation:state.auto,
+    stereoShared: document.getElementById("stereo").value === "1", seed: +document.getElementById("seed").value};
+  saveBlob(new Blob([JSON.stringify(preset, null, 2)], {type:"application/json"}), "crusher_preset.json");
+};
+const presetFile = document.getElementById("presetFile");
+document.getElementById("loadPreset").onclick = () => presetFile.click();
+presetFile.onchange = async () => {
+  const f = presetFile.files[0]; presetFile.value = ""; if (!f) return;
+  try {
+    const p = JSON.parse(await f.text());
+    pushUndo(snapshot());
+    PARAMS.forEach(d => {
+      if (p.knobs && typeof p.knobs[d.id] === "number") state.knobs[d.id] = p.knobs[d.id];
+      state.auto[d.id] = (p.automation && Array.isArray(p.automation[d.id]))
+        ? p.automation[d.id].filter(q => typeof q.t === "number" && typeof q.v === "number")
+            .map(q => ({t:Math.min(1,Math.max(0,q.t)), v:Math.min(1,Math.max(0,q.v))})).sort((a,b) => a.t - b.t)
+        : [];
+    });
+    if (typeof p.stereoShared === "boolean") document.getElementById("stereo").value = p.stereoShared ? "1" : "0";
+    if (typeof p.seed === "number") document.getElementById("seed").value = p.seed;
+    refreshParams(); drawWave(); markStale();
+  } catch (e) { alertBox("Couldn't read preset: " + e.message); }
+};
+
+// ---------- waveform + automation canvas ----------
+const wave = document.getElementById("wave"), ruler = document.getElementById("ruler");
+let inPeaks = null, outPeaks = null, W = 0, H = 0, DPR = 1;
+function css(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function resizeCanvases(){
+  if (!inBuf) return;
+  DPR = window.devicePixelRatio || 1;
+  W = wave.clientWidth; H = wave.clientHeight;
+  wave.width = W*DPR; wave.height = H*DPR;
+  ruler.width = W*DPR; ruler.height = ruler.clientHeight*DPR;
+  inPeaks = outPeaks = null; drawWave();
+}
+window.addEventListener("resize", resizeCanvases);
+function peaks(buf){
+  const cols = Math.max(1, Math.floor(W)), n = buf.length, ch = buf.numberOfChannels;
+  const mins = new Float32Array(cols), maxs = new Float32Array(cols);
+  const data = []; for (let c = 0; c < ch; c++) data.push(buf.getChannelData(c));
+  for (let x = 0; x < cols; x++){
+    const s0 = Math.floor(x*n/cols), s1 = Math.max(s0+1, Math.floor((x+1)*n/cols));
+    let lo = 1, hi = -1;
+    const stride = Math.max(1, Math.floor((s1 - s0)/400));   // sample long columns sparsely
+    for (let c = 0; c < ch; c++){ const d = data[c]; for (let i = s0; i < s1; i += stride){ const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; } }
+    mins[x] = lo; maxs[x] = hi;
+  }
+  return {mins, maxs};
+}
+function drawPeaks(ctx, pk, color, alpha){
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  const mid = H/2, amp = H/2 - 6;
+  for (let x = 0; x < pk.mins.length; x++){
+    const y0 = mid - pk.maxs[x]*amp, y1 = mid - pk.mins[x]*amp;
+    ctx.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+  }
+  ctx.globalAlpha = 1;
+}
+const PAD = 8;  // vertical padding for automation lane
+function vToY(v){ return PAD + (1 - v)*(H - 2*PAD); }
+function yToV(y){ return Math.min(1, Math.max(0, 1 - (y - PAD)/(H - 2*PAD))); }
+function drawWave(){
+  if (!inBuf || !W) return;
+  const ctx = wave.getContext("2d");
+  ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,W,H);
+  if (!inPeaks) inPeaks = peaks(inBuf);
+  if (outBuf && !outPeaks) outPeaks = peaks(outBuf);
+  const showAfter = view === "after" && outPeaks;
+  drawPeaks(ctx, inPeaks, css("--wave-before"), showAfter ? 0.45 : 1);
+  if (outPeaks) drawPeaks(ctx, outPeaks, css("--wave-after"), showAfter ? 0.9 : 0.3);
+
+  // other automated lanes, faint
+  PARAMS.forEach((p, i) => {
+    const pts = state.auto[p.id];
+    if (p.id === state.lane || !pts.length) return;
+    drawLane(ctx, pts, LANE_COLORS[i % LANE_COLORS.length], 0.35, false);
+  });
+  // selected lane
+  const li = PARAMS.findIndex(p => p.id === state.lane);
+  const pts = state.auto[state.lane], col = LANE_COLORS[li % LANE_COLORS.length];
+  if (pts.length) drawLane(ctx, pts, col, 1, true);
+  else {   // show static knob value as dashed line
+    ctx.setLineDash([4,4]); ctx.strokeStyle = col; ctx.globalAlpha = 0.6; ctx.lineWidth = 1.5;
+    const y = vToY(toNorm(P[state.lane], state.knobs[state.lane]));
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  // hover readout
+  if (hover){
+    ctx.font = "11px " + css("--mono"); ctx.fillStyle = css("--text");
+    const txt = fmtTime(hover.t*inBuf.duration) + "  " + fmt(P[state.lane], fromNorm(P[state.lane], hover.v));
+    const tw = ctx.measureText(txt).width;
+    ctx.fillText(txt, Math.min(W - tw - 6, Math.max(6, hover.x + 8)), Math.max(14, hover.y - 8));
+  }
+  // playhead
+  const px = currentPos()/inBuf.duration*W;
+  ctx.fillStyle = css("--text"); ctx.fillRect(px, 0, 1.5, H);
+  drawRuler();
+  document.getElementById("time").textContent = fmtTime(currentPos()) + " / " + fmtTime(inBuf.duration);
+}
+function drawLane(ctx, pts, color, alpha, handles){
+  ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = handles ? 2 : 1.5;
+  ctx.beginPath(); ctx.moveTo(0, vToY(pts[0].v));
+  pts.forEach(q => ctx.lineTo(q.t*W, vToY(q.v)));
+  ctx.lineTo(W, vToY(pts[pts.length-1].v)); ctx.stroke();
+  if (handles){
+    pts.forEach((q, i) => {
+      ctx.beginPath(); ctx.arc(q.t*W, vToY(q.v), i === dragIdx ? 6 : 4.5, 0, Math.PI*2);
+      ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = css("--panel2"); ctx.lineWidth = 1.5; ctx.stroke();
+    });
+  }
+  ctx.globalAlpha = 1;
+}
+function drawRuler(){
+  const ctx = ruler.getContext("2d"), h = ruler.clientHeight;
+  ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,W,h);
+  const dur = inBuf.duration;
+  const steps = [0.5,1,2,5,10,15,30,60,120,300];
+  const stepS = steps.find(s => s/dur*W >= 70) || 600;
+  ctx.fillStyle = css("--muted"); ctx.font = "10px " + css("--mono");
+  for (let s = 0; s <= dur; s += stepS){
+    const x = s/dur*W; ctx.fillRect(x, 0, 1, 5); ctx.fillText(fmtTime(s, true), x + 3, 15);
+  }
+  ctx.fillStyle = css("--accent"); ctx.fillRect(currentPos()/dur*W - 1, 0, 2, h);
+}
+function fmtTime(s, short){
+  const m = Math.floor(s/60), r = s - m*60;
+  return short ? `${m}:${String(Math.floor(r)).padStart(2,"0")}` : `${m}:${r.toFixed(1).padStart(4,"0")}`;
+}
+
+// pointer editing
+let dragIdx = -1, dragSnap = null, hover = null, lastDown = {time:0, idx:-1};
+function evPos(e){ const r = wave.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; }
+function hitPoint(x, y){
+  const pts = state.auto[state.lane];
+  let best = -1, bd = 10;
+  pts.forEach((q, i) => { const d = Math.hypot(q.t*W - x, vToY(q.v) - y); if (d < bd){ bd = d; best = i; } });
+  return best;
+}
+function deletePoint(i){
+  pushUndo(snapshot()); state.auto[state.lane].splice(i, 1); refreshParams(); drawWave(); markStale();
+}
+wave.addEventListener("pointerdown", e => {
+  if (!inBuf || e.button !== 0) return;
+  const {x, y} = evPos(e), now = performance.now();
+  let i = hitPoint(x, y);
+  if (i >= 0 && lastDown.idx === i && now - lastDown.time < 350){   // double-click a point
+    lastDown = {time:0, idx:-1}; deletePoint(i); return;
+  }
+  dragSnap = snapshot();
+  const pts = state.auto[state.lane];
+  if (i < 0){
+    const np = {t: Math.min(1, Math.max(0, x/W)), v: yToV(y)};
+    pts.push(np); pts.sort((a,b) => a.t - b.t);
+    i = pts.indexOf(np);
+    refreshParams();
+  }
+  dragIdx = i; lastDown = {time: now, idx: i};
+  wave.setPointerCapture(e.pointerId); drawWave();
+});
+wave.addEventListener("pointermove", e => {
+  if (!inBuf) return;
+  const {x, y} = evPos(e);
+  hover = {x, y, t: Math.min(1, Math.max(0, x/W)), v: yToV(y)};
+  if (dragIdx >= 0){
+    const pts = state.auto[state.lane], q = pts[dragIdx];
+    const lo = dragIdx > 0 ? pts[dragIdx-1].t : 0, hi = dragIdx < pts.length-1 ? pts[dragIdx+1].t : 1;
+    q.t = Math.min(hi, Math.max(lo, x/W)); q.v = yToV(y);
+    hover.v = q.v; hover.t = q.t;
+  }
+  wave.style.cursor = (dragIdx >= 0 || hitPoint(x, y) >= 0) ? "grab" : "crosshair";
+  drawWave();
+});
+function endDrag(){
+  if (dragIdx < 0) return;
+  dragIdx = -1;
+  if (dragSnap !== null && dragSnap !== snapshot()){ pushUndo(dragSnap); markStale(); }
+  dragSnap = null; drawWave();
+}
+wave.addEventListener("pointerup", endDrag);
+wave.addEventListener("pointercancel", endDrag);
+wave.addEventListener("pointerleave", () => { if (dragIdx < 0){ hover = null; drawWave(); } });
+wave.addEventListener("contextmenu", e => {
+  e.preventDefault(); const {x, y} = evPos(e); const i = hitPoint(x, y); if (i >= 0) deletePoint(i);
+});
+ruler.addEventListener("pointerdown", e => {
+  if (!inBuf) return;
+  const seekTo = ev => { const r = ruler.getBoundingClientRect(); seek((ev.clientX - r.left)/r.width*inBuf.duration); };
+  seekTo(e);
+});
+
+// keyboard
+document.addEventListener("keydown", e => {
+  if ((e.target.tagName === "INPUT" && e.target.type !== "range") || e.target.tagName === "SELECT") return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === "z"){ e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if (mod && e.key.toLowerCase() === "y"){ e.preventDefault(); redo(); }
+  else if (e.code === "Space" && inBuf){ e.preventDefault(); playing ? stop() : play(); }
+});
+
+function updateButtons(){
+  document.getElementById("play").disabled = !inBuf;
+  document.getElementById("play").textContent = playing ? "❚❚ Pause" : "▶ Play";
+  document.getElementById("render").disabled = !inBuf || !pyodide || rendering;
+  document.getElementById("render").textContent = rendering ? "Rendering…" : "Render";
+  document.getElementById("download").disabled = !outBuf || rendering;
+  document.getElementById("abAfter").disabled = !outBuf;
+  document.getElementById("undo").disabled = !undoStack.length;
+  document.getElementById("redo").disabled = !redoStack.length;
+}
+refreshParams(); updateButtons();
+</script>
+</body>
+</html>

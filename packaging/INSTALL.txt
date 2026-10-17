@@ -1,0 +1,25 @@
+Bandwidth Crusher for macOS (AU + VST3, Apple Silicon and Intel)
+
+Easiest way
+  1. Right-click "Install.command" and choose Open (a plain double-click may be
+     blocked the first time, because the script isn't from an identified developer).
+  2. Click Open in the warning, and wait for "Installed" in the Terminal window.
+
+Or by hand, in Terminal, from inside this folder:
+  cp -R "Bandwidth Crusher.component" ~/Library/Audio/Plug-Ins/Components/
+  cp -R "Bandwidth Crusher.vst3" ~/Library/Audio/Plug-Ins/VST3/
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Bandwidth Crusher.component" ~/Library/Audio/Plug-Ins/VST3/"Bandwidth Crusher.vst3"
+
+Then in Ableton Live 11: Preferences > Plug-Ins > turn on "Use Audio Units"
+and/or "Use VST3 Plug-In System Folders" > Rescan. It appears under the
+manufacturer "Bytebent Audio". Use either the AU or the VST3, not both.
+
+If you already have an older copy installed, it is kept: the installer renames
+it to "Bandwidth Crusher (old).component" / ".vst3" so both show up in Ableton
+and Live sets that use the old one keep working.
+
+"Bandwidth Crusher.app" is a standalone version for quick tests outside Ableton.
+
+The xattr step is needed because the plugin isn't signed with a paid Apple
+developer certificate; it removes the "downloaded from the internet" flag so
+macOS lets Ableton load it.
